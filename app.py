@@ -79,6 +79,7 @@ def check_and_alert():
 # ===== حلقه پس‌زمینه =====
 def background_worker():
     time.sleep(10)
+       send_telegram("✅ ربات با موفقیت وصل شد و فعاله!") 
     while True:
         try:
             check_and_alert()
