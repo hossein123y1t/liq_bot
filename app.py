@@ -12,7 +12,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN")
 
 ACTOR_ID = "automation-lab/coinglass-liquidation-heatmap-scraper"
-CHECK_INTERVAL = 6 * 60 * 60  # هر 6 ساعت
+CHECK_INTERVAL = 2 * 60 * 60  # هر 2 ساعت
 ALERT_THRESHOLD = 1.0          # فاصله کمتر از 1 درصد
 
 # ===== گرفتن داده از Apify =====
