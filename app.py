@@ -6,87 +6,74 @@ import time
 
 app = Flask(__name__)
 
-# ===== تنظیمات =====
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN")
 
-ACTOR_ID = "automation-lab/coinglass-liquidation-heatmap-scraper"
-CHECK_INTERVAL = 2 * 60 * 60  # هر 2 ساعت
-ALERT_THRESHOLD = 1.0          # فاصله کمتر از 1 درصد
+ACTOR_ID = "feng0928~coinglass-heatmap"
+CHECK_INTERVAL = 2 * 60 * 60
 
-# ===== گرفتن داده از Apify =====
-def get_heatmap_data():
+def get_heatmap():
     url = f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
     params = {"token": APIFY_TOKEN}
     payload = {
-        "symbol": "BTC",
+        "coin": "BTC",
         "exchange": "Binance",
-        "pair": "BTCUSDT",
-        "model": "1",
-        "range": "24h"
+        "quoteCurrency": "USDT",
+        "timeRange": "24h",
+        "headless": True
     }
     try:
-        r = requests.post(url, params=params, json=payload, timeout=120)
+        r = requests.post(url, params=params, json=payload, timeout=180)
         r.raise_for_status()
         items = r.json()
-        return items[0] if items else None
+        if items and len(items) > 0:
+            return items[0]
+        return None
     except Exception as e:
         print(f"Apify error: {e}")
         return None
 
-# ===== فرستادن پیام به تلگرام =====
-def send_telegram(text):
+def send_telegram_photo(image_url, caption):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": text,
+            "photo": image_url,
+            "caption": caption,
             "parse_mode": "HTML"
-        }, timeout=10)
+        }, timeout=30)
     except Exception as e:
         print(f"Telegram error: {e}")
 
-# ===== تحلیل و هشدار =====
-def check_and_alert():
-    data = get_heatmap_data()
-    if not data:
+def check_and_send():
+    data = get_heatmap()
+    if not data or not data.get("success"):
+        print("No data or failed")
         return
-
-    current = data.get("latestClose")
-    hotspots = data.get("liquidationHotspots", [])
-    if not current or not hotspots:
+    image_url = data.get("url")
+    if not image_url:
+        print("No image URL")
         return
+    caption = (
+        f"📊 <b>Heatmap لیکوییدیشن BTC</b>\n\n"
+        f"صرافی: {data.get('exchange')}\n"
+        f"جفت: {data.get('coin')}/{data.get('quoteCurrency')}\n"
+        f"بازه: {data.get('timeRange')}\n"
+        f"زمان: {data.get('timestamp')}"
+    )
+    send_telegram_photo(image_url, caption)
+    print(f"Heatmap sent at {data.get('timestamp')}")
 
-    closest = min(hotspots, key=lambda h: abs(h.get("distancePercent", 999)))
-    dist = abs(closest.get("distancePercent", 999))
-    price = closest.get("price")
-    intensity = closest.get("aggregateIntensity", 0)
-    side = "بالاتر" if closest.get("side") == "above" else "پایین‌تر"
-
-    if dist <= ALERT_THRESHOLD:
-        msg = (
-            f"🚨 <b>هشدار لیکوییدیشن BTC</b>\n\n"
-            f"قیمت فعلی: <b>${current:,.0f}</b>\n"
-            f"منطقه پرتراکم: <b>${price:,.0f}</b> ({side})\n"
-            f"فاصله: <b>{dist:.2f}%</b>\n"
-            f"شدت: <b>${intensity/1e9:,.1f} میلیارد</b>\n\n"
-            f"⚠️ احتمال حرکت قیمت به این سمت"
-        )
-        send_telegram(msg)
-        print(f"Alert sent: {dist:.2f}%")
-
-# ===== حلقه پس‌زمینه =====
 def background_worker():
     time.sleep(10)
     while True:
         try:
-            check_and_alert()
+            check_and_send()
         except Exception as e:
             print(f"Worker error: {e}")
         time.sleep(CHECK_INTERVAL)
 
-# ===== Flask endpoints =====
 @app.route("/")
 def home():
     return "Bot is running"
@@ -95,7 +82,6 @@ def home():
 def health():
     return "OK"
 
-# ===== اجرا =====
 if __name__ == "__main__":
     threading.Thread(target=background_worker, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
